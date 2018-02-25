@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<!-- saved from url=(0111)http://kratzert.github.io/2016/02/12/understanding-the-gradient-flow-through-the-batch-normalization-layer.html -->
+<html class="gr__kratzert_github_io"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google-site-verification" content="0pKJV3T3J3Twiv29GkRWGmFxKknDwg0hMG0_ccytj4A">
+  <title>Understanding the backward pass through Batch Normalization Layer</title>
+  <meta name="description" content="An explenation of gradient flow through BatchNorm-Layer following the circuit represantation learned in Standfords class CS231n.">
+
+  <link rel="stylesheet" href="./Understanding the backward pass through Batch Normalization Layer_files/main.css">
+  <link rel="canonical" href="http://kratzert.github.io/2016/02/12/kratzert.github.io/2016/02/12/understanding-the-gradient-flow-through-the-batch-normalization-layer.html">
+  <link rel="alternate" type="application/rss+xml" title="Flaire of Machine Learning" href="http://kratzert.github.io/2016/02/12/kratzert.github.io/feed.xml">
+<script type="text/javascript" async="" src="./Understanding the backward pass through Batch Normalization Layer_files/embed.js"></script><script src="./Understanding the backward pass through Batch Normalization Layer_files/alfie.f51946af45e0b561c60f768335c9eb79.js" async="" charset="UTF-8"></script></head>
+
+
+  <body data-gr-c-s-loaded="true"><div id="StayFocusd-infobar" style="display: none; top: 0px;">
+    <img src="chrome-extension://laankejkbhbdhmipfmgcngdelahlfoji/common/img/eye_19x19_red.png">
+    <span id="StayFocusd-infobar-msg"></span>
+    <span id="StayFocusd-infobar-links">
+        <a id="StayFocusd-infobar-never-show">hide forever</a>&nbsp;&nbsp;|&nbsp;&nbsp;
+        <a id="StayFocusd-infobar-hide">hide once</a>
+    </span>
+</div>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="http://kratzert.github.io/">Flaire of Machine Learning</a>
+
+    <nav class="site-nav">
+      <a href="http://kratzert.github.io/2016/02/12/understanding-the-gradient-flow-through-the-batch-normalization-layer.html#" class="menu-icon">
+        <svg viewBox="0 0 18 15">
+          <path fill="#424242" d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.031C17.335,0,18,0.665,18,1.484L18,1.484z"></path>
+          <path fill="#424242" d="M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0c0-0.82,0.665-1.484,1.484-1.484 h15.031C17.335,6.031,18,6.696,18,7.516L18,7.516z"></path>
+          <path fill="#424242" d="M18,13.516C18,14.335,17.335,15,16.516,15H1.484C0.665,15,0,14.335,0,13.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.031C17.335,12.031,18,12.696,18,13.516L18,13.516z"></path>
+        </svg>
+      </a>
+
+      <div class="trigger">
+        
+          
+          <a class="page-link" href="http://kratzert.github.io/about/">About</a>
+          
+        
+          
+        
+          
+        
+          
+        
+          
+          <a class="page-link" href="http://kratzert.github.io/openlearning.html">Open Learning</a>
+          
+        
+      </div>
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <div class="page-content">
+      <div class="wrapper">
+        <article class="post" itemscope="" itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title" itemprop="name headline">Understanding the backward pass through Batch Normalization Layer</h1>
+    <p class="post-meta"><time datetime="2016-02-12T13:54:00+00:00" itemprop="datePublished">Feb 12, 2016</time></p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>At the moment there is a wonderful course running at Standford University, called <a href="http://cs231n.stanford.edu/">CS231n - Convolutional Neural Networks for Visual Recognition</a>, held by Andrej Karpathy, Justin Johnson and Fei-Fei Li. Fortunately all the <a href="http://cs231n.stanford.edu/syllabus.html">course material</a> is provided for free and all the lectures are recorded and uploaded on <a href="https://www.youtube.com/playlist?list=PLkt2uSq6rBVctENoVBg1TpCC7OQi31AlC">Youtube</a>. This class gives a wonderful intro to machine learning/deep learning coming along with programming assignments.</p>
+
+<h2 id="batch-normalization">Batch Normalization</h2>
+
+<p>One Topic, which kept me quite busy for some time was the implemantation of <a href="http://arxiv.org/abs/1502.03167">Batch Normalization</a>, especially the backward pass. Batch Normalization is a technique to provide any layer in a Neural Network with inputs that are zero mean/unit variance - and this is basically what they like! But BatchNorm consists of one more step which makes this algorithm really powerful. Let’s take a look at the BatchNorm Algorithm:</p>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/bn_algorithm.PNG">
+  <div class="figcaption"><br> Algorithm of Batch Normalization copied from the Paper by Ioffe and Szegedy mentioned above.<br>
+  </div>
+</div>
+
+<p>Look at the last line of the algorithm. After normalizing the input <code class="highlighter-rouge">x</code> the result is squashed through a linear function with parameters <code class="highlighter-rouge">gamma</code> and <code class="highlighter-rouge">beta</code>. These are learnable parameters of the BatchNorm Layer and make it basically possible to say “Hey!! I don’t want zero mean/unit variance input, give me back the raw input - it’s better for me.” If <code class="highlighter-rouge">gamma = sqrt(var(x))</code> and <code class="highlighter-rouge">beta = mean(x)</code>, the original activation is restored. This is, what makes BatchNorm really powerful. We initialize the BatchNorm Parameters to transform the input to zero mean/unit variance distributions but during training they can learn that any other distribution might be better.
+Anyway, I don’t want to spend to much time on explaining Batch Normalization. If you want to learn more about it, the <a href="http://arxiv.org/abs/1502.03167">paper</a> is very well written and <a href="https://youtu.be/gYpoJMlgyXA?list=PLkt2uSq6rBVctENoVBg1TpCC7OQi31AlC&amp;t=3078">here</a> Andrej is explaining BatchNorm in class.</p>
+
+<p>Btw: it’s called “Batch” Normalization because we perform this transformation and calculate the statistics only for a subpart (a batch) of the entire trainingsset.</p>
+
+<h2 id="backpropagation">Backpropagation</h2>
+
+<p>In this blog post I don’t want to give a lecture in Backpropagation and Stochastic Gradient Descent (SGD). For now I will assume that whoever will read this post, has some basic understanding of these principles. For the rest, let me quote Wiki:</p>
+
+<blockquote>
+  <p>Backpropagation, an abbreviation for “backward propagation of errors”, is a common method of training artificial neural networks used in conjunction with an optimization method such as gradient descent. The method calculates the gradient of a loss function with respect to all the weights in the network. The gradient is fed to the optimization method which in turn uses it to update the weights, in an attempt to minimize the loss function.</p>
+</blockquote>
+
+<p>Uff, sounds tough, eh? I will maybe write another post about this topic but for now I want to focus on the concrete example of the backwardpass through the BatchNorm-Layer.</p>
+
+<h2 id="computational-graph-of-batch-normalization-layer">Computational Graph of Batch Normalization Layer</h2>
+
+<p>I think one of the things I learned from the cs231n class that helped me most understanding backpropagation was the explenation through computational graphs. These Graphs are a good way to visualize the computational flow of fairly complex functions by small, piecewise differentiable subfunctions. For the BatchNorm-Layer it would look something like this:</p>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/BNcircuit.png">
+  <div class="figcaption"><br> Computational graph of the BatchNorm-Layer. From left to right, following the black arrows flows the forward pass. The inputs are a matrix X and gamma and beta as vectors. From right to left, following the red arrows flows the backward pass which distributes the gradient from above layer to gamma and beta and all the way back to the input.<br>
+  </div>
+</div>
+
+<p>I think for all, who followed the course or who know the technique the forwardpass (black arrows) is easy and straightforward to read. From input <code class="highlighter-rouge">x</code> we calculate the mean of every dimension in the feature space and then substract this vector of mean values from every training example. With this done, following the lower branch, we calculate the per-dimension variance and with that the entire denominator of the normalization equation. Next we invert it and multiply it with difference of inputs and means and we have <code class="highlighter-rouge">x_normalized</code>. The last two blobs on the left perform the squashing by multiplying with the input <code class="highlighter-rouge">gamma</code> and finally adding <code class="highlighter-rouge">beta</code>. Et voilà, we have our Batch-Normalized output.</p>
+
+<p>A vanilla implemantation of the forwardpass might look like this:</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code><span class="k">def</span> <span class="nf">batchnorm_forward</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">gamma</span><span class="p">,</span> <span class="n">beta</span><span class="p">,</span> <span class="n">eps</span><span class="p">):</span>
+
+  <span class="n">N</span><span class="p">,</span> <span class="n">D</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+
+  <span class="c">#step1: calciulate mean</span>
+  <span class="n">mu</span> <span class="o">=</span> <span class="mf">1.</span><span class="o">/</span><span class="n">N</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="nb">sum</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span>
+
+  <span class="c">#step2: substract mean vector of every trainings example</span>
+  <span class="n">xmu</span> <span class="o">=</span> <span class="n">x</span> <span class="o">-</span> <span class="n">mu</span>
+
+  <span class="c">#step3: following the lower branch - calculation denominator</span>
+  <span class="n">sq</span> <span class="o">=</span> <span class="n">xmu</span> <span class="o">**</span> <span class="mi">2</span>
+
+  <span class="c">#step4: calculate variance</span>
+  <span class="n">var</span> <span class="o">=</span> <span class="mf">1.</span><span class="o">/</span><span class="n">N</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="nb">sum</span><span class="p">(</span><span class="n">sq</span><span class="p">,</span> <span class="n">axis</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span>
+
+  <span class="c">#step5: add eps for numerical stability, then sqrt</span>
+  <span class="n">sqrtvar</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">var</span> <span class="o">+</span> <span class="n">eps</span><span class="p">)</span>
+
+  <span class="c">#step6: invert sqrtwar</span>
+  <span class="n">ivar</span> <span class="o">=</span> <span class="mf">1.</span><span class="o">/</span><span class="n">sqrtvar</span>
+
+  <span class="c">#step7: execute normalization</span>
+  <span class="n">xhat</span> <span class="o">=</span> <span class="n">xmu</span> <span class="o">*</span> <span class="n">ivar</span>
+
+  <span class="c">#step8: Nor the two transformation steps</span>
+  <span class="n">gammax</span> <span class="o">=</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">xhat</span>
+
+  <span class="c">#step9</span>
+  <span class="n">out</span> <span class="o">=</span> <span class="n">gammax</span> <span class="o">+</span> <span class="n">beta</span>
+
+  <span class="c">#store intermediate</span>
+  <span class="n">cache</span> <span class="o">=</span> <span class="p">(</span><span class="n">xhat</span><span class="p">,</span><span class="n">gamma</span><span class="p">,</span><span class="n">xmu</span><span class="p">,</span><span class="n">ivar</span><span class="p">,</span><span class="n">sqrtvar</span><span class="p">,</span><span class="n">var</span><span class="p">,</span><span class="n">eps</span><span class="p">)</span>
+
+  <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">cache</span>
+</code></pre>
+</div>
+
+<p>Note that for the excercise of the cs231n class we had to do a little more (calculate running mean and variance as well as implement different forward pass for trainings mode and test mode) but for the explenation of the backwardpass this piece of code will work.
+In the cache variable we store some stuff that we need for the computing of the backwardpass, as you will see now!</p>
+
+<h2 id="the-power-of-chain-rule-for-backpropagation">The power of Chain Rule for backpropagation</h2>
+
+<p>For all who kept on reading until now (congratualations!!), we are close to arrive at the backward pass of the BatchNorm-Layer.
+To fully understand the channeling of the gradient backwards through the BatchNorm-Layer you should have some basic understanding of what the <a href="https://en.wikipedia.org/wiki/Chain_rule">Chain rule</a> is. As a little refresh follows one figure that examplifies the use of chain rule for the backward pass in computational graphs.</p>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/chainrule_example.PNG">
+  <div class="figcaption"><br>The forwardpass on the left in calculates `z` as a function `f(x,y)` using the input variables `x` and `y` (This could literally be any function, examples are shown in the BatchNorm-Graph above). The right side of the figures shows the backwardpass. Recieving `dL/dz`, the gradient of the loss function with respect to `z` from above, the gradients of `x` and `y` on the loss function can be calculate by applying the chain rule, as shown in the figure.<br>
+  </div>
+</div>
+
+<p>So again, we only have to multiply the local gradient of the function with the gradient of above to channel the gradient backwards. Some derivations of some basic functions are listed in the <a href="http://cs231n.github.io/optimization-2/#sigmoid">course material</a>. If you understand that, and with some more basic knowledge in calculus, what will follow is a piece of cake!</p>
+
+<h2 id="finally-the-backpass-of-the-batch-normalization">Finally: The Backpass of the Batch Normalization</h2>
+
+<p>In the comments of aboves code snippet I already numbered the computational steps by consecutive numbers. The Backpropagation follows these steps in reverse order, as we are literally backpassing through the computational graph. We will know take a more detailed look at every single computation of the backwardpass and by that deriving step by step a naive algorithm for the backward pass.</p>
+
+<h3 id="step-9">Step 9</h3>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step9.png">
+  <div class="figcaption"><br>Backwardpass through the last summation gate of the BatchNorm-Layer. Enclosured in brackets I put the dimensions of Input/Output<br>
+  </div>
+</div>
+<p>Recall that the derivation of a function <code class="highlighter-rouge">f = x + y</code> with respect to any of these two variables is <code class="highlighter-rouge">1</code>. This means to channel a gradient through a summation gate, we only need to multiply by <code class="highlighter-rouge">1</code>. And because the summation of <code class="highlighter-rouge">beta</code> during the forward pass is a row-wise summation, during the backward pass we need to sum up the gradient over all of its columns (take a look at the dimensions). So after the first step of backpropagation we already got the gradient for one learnable parameter: <code class="highlighter-rouge">beta</code></p>
+
+<h3 id="step-8">Step 8</h3>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step8.png">
+  <div class="figcaption"><br>Next follows the backward pass through the multiplication gate of the normalized input and the vector of gamma.<br>
+  </div>
+</div>
+<p>For any function <code class="highlighter-rouge">f = x * y</code> the derivation with respect to one of the inputs is simply just the other input variable. This also means, that for this step of the backward pass we need the variables used in the forward pass of this gate (luckily stored in the <code class="highlighter-rouge">cache</code> of aboves function). So again we get the gradients of the two inputs of these gates by applying chain rule (  = multiplying the local gradient with the gradient from above). For <code class="highlighter-rouge">gamma</code>, as for <code class="highlighter-rouge">beta</code> in step 9, we need to sum up the gradients over dimension <code class="highlighter-rouge">N</code>, because the multiplication was again row-wise. So we now have the gradient for the second learnable parameter of the BatchNorm-Layer <code class="highlighter-rouge">gamma</code> and “only” need to backprop the gradient to the input <code class="highlighter-rouge">x</code>, so that we then can backpropagate the gradient to any layer further downwards.</p>
+
+<h3 id="step-7">Step 7</h3>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step7.png">
+  &lt;div class="figcaption"<br>This step during the forward pass was the final step of the normalization combining the two branches (nominator and denominator) of the computational graph. During the backward pass we will calculate the gradients that will flow seperatly through these two branches backwards.<br>
+  </div>
+<p>&lt;/div&gt;
+It’s basically the exact same operation, so lets not waste much time and continue. The two needed variables <code class="highlighter-rouge">xmu</code> and <code class="highlighter-rouge">ivar</code> for this step are also stored <code class="highlighter-rouge">cache</code> variable we pass to the backprop function. (And again: This is one of the main advantages of computational graphs. Splitting complex functions into a handful of simple basic operations. And like this you have a lot of repetitions!)</p>
+
+<h3 id="step-6">Step 6</h3>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step6.png">
+  <div class="figcaption"><br>This is a "one input-one output" node where, during the forward pass, we inverted the input (square root of the variance)<br>
+  </div>
+</div>
+<p>The local gradient is visualized in the image and should not be hard to derive by hand. Multiplied by the gradient from above is what we channel to the next step. <code class="highlighter-rouge">sqrtvar</code> is also one of the variables passed in <code class="highlighter-rouge">cache</code>.</p>
+
+<h3 id="step-5">Step 5</h3>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step5.png">
+  <div class="figcaption"><br>Again "one input-one output". This node calculates during the forward pass the denominator of the normalization.<br>
+  </div>
+</div>
+<p>The derivation of the local gradient is little magic and should need no explenation. <code class="highlighter-rouge">var</code> and <code class="highlighter-rouge">eps</code> are also passed in the <code class="highlighter-rouge">cache</code>. No more words to lose!</p>
+
+<h3 id="step-4">Step 4</h3>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step4.png">
+  <div class="figcaption"><br>Also a "one input-one output" node. During the forward pass the output of this node is the variance of each feature `d for d in [1...D]`.<br>
+  </div>
+</div>
+<p>The derivation of this steps local gradient might look unclear at the very first glance. But it’s not that hard at the end. Let’s recall that a normal summation gate (see step 9) during the backward pass only transfers the gradient unchanged and evenly to the inputs. With that in mind, it should not be that hard to conclude, that a column-wise summation during the forward pass, during the backward pass means that we evenly distribute the gradient over all rows for each column. And not much more is done here. We create a matrix of ones with the same shape as the input <code class="highlighter-rouge">sq</code> of the forward pass, devide it element-wise by the number of rows (thats the local gradient) and multiply it by the gradient from above.</p>
+
+<h3 id="step-3">Step 3</h3>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step3.png">
+  <div class="figcaption"><br>This node outputs the square of its input, which during the forward pass was a matrix containing the input `x` subtracted by the per-feature `mean`.<br>
+  </div>
+</div>
+<p>I think for all who followed until here, there is not much to explain for the derivation of the local gradient.</p>
+
+<h3 id="step-2">Step 2</h3>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step2.png">
+  <div class="figcaption"><br>Now this looks like a more fun gate! two inputs-two outputs! This node substracts the per-feature mean row-wise of each trainings example `n for n in [1...N]` during the forward pass.<br>
+  </div>
+</div>
+<p>Okay lets see. One of the definitions of backprogatation and computational graphs is, that whenever we have two gradients coming to one node, we simply add them up. Knowing this, the rest is little magic as the local gradient for a substraction is as hard to derive as for a summation. Note that for <code class="highlighter-rouge">mu</code> we have to sum up the gradients over the dimension <code class="highlighter-rouge">N</code> (as we did before for <code class="highlighter-rouge">gamma</code> and <code class="highlighter-rouge">beta</code>).</p>
+
+<h3 id="step-1">Step 1</h3>
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step1.png">
+  <div class="figcaption"><br>The function of this node is exactly the same as of step 4. Only that during the forward pass the input was `x` - the input to the BatchNorm-Layer and the output here is `mu`, a vector that contains the mean of each feature.<br>
+  </div>
+</div>
+<p>As this node executes the exact same operation as the one explained in step 4, also the backpropagation of the gradient looks the same. So let’s continue to the last step.</p>
+
+<h3 id="step-0---arriving-at-the-input">Step 0 - Arriving at the Input</h3>
+
+<div class="fig figcenter fighighlight">
+  <img src="./Understanding the backward pass through Batch Normalization Layer_files/step0.png">
+  <div class="figcaption"><br>
+  </div>
+</div>
+<p>I only added this image to again visualize that at the very end we need to sum up the gradients <code class="highlighter-rouge">dx1</code> and <code class="highlighter-rouge">dx2</code> to get the final gradient <code class="highlighter-rouge">dx</code>. This matrix contains the gradient of the loss function with respect to the input of the BatchNorm-Layer. This gradient <code class="highlighter-rouge">dx</code> is also what we give as input to the backwardpass of the next layer, as for this layer we recieve <code class="highlighter-rouge">dout</code> from the layer above.</p>
+
+<h1 id="naive-implemantation-of-the-backward-pass-through-the-batchnorm-layer">Naive implemantation of the backward pass through the BatchNorm-Layer</h1>
+
+<p>Putting together every single step the naive implementation of the backwardpass might look something like this:</p>
+
+<div class="highlighter-rouge"><pre class="highlight"><code><span class="k">def</span> <span class="nf">batchnorm_backward</span><span class="p">(</span><span class="n">dout</span><span class="p">,</span> <span class="n">cache</span><span class="p">):</span>
+
+  <span class="c">#unfold the variables stored in cache</span>
+  <span class="n">xhat</span><span class="p">,</span><span class="n">gamma</span><span class="p">,</span><span class="n">xmu</span><span class="p">,</span><span class="n">ivar</span><span class="p">,</span><span class="n">sqrtvar</span><span class="p">,</span><span class="n">var</span><span class="p">,</span><span class="n">eps</span> <span class="o">=</span> <span class="n">cache</span>
+
+  <span class="c">#get the dimensions of the input/output</span>
+  <span class="n">N</span><span class="p">,</span><span class="n">D</span> <span class="o">=</span> <span class="n">dout</span><span class="o">.</span><span class="n">shape</span>
+
+  <span class="c">#step9</span>
+  <span class="n">dbeta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="nb">sum</span><span class="p">(</span><span class="n">dout</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+  <span class="n">dgammax</span> <span class="o">=</span> <span class="n">dout</span> <span class="c">#not necessary, but more understandable</span>
+
+  <span class="c">#step8</span>
+  <span class="n">dgamma</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="nb">sum</span><span class="p">(</span><span class="n">dgammax</span><span class="o">*</span><span class="n">xhat</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+  <span class="n">dxhat</span> <span class="o">=</span> <span class="n">dgammax</span> <span class="o">*</span> <span class="n">gamma</span>
+
+  <span class="c">#step7</span>
+  <span class="n">divar</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="nb">sum</span><span class="p">(</span><span class="n">dxhat</span><span class="o">*</span><span class="n">xmu</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+  <span class="n">dxmu1</span> <span class="o">=</span> <span class="n">dxhat</span> <span class="o">*</span> <span class="n">ivar</span>
+
+  <span class="c">#step6</span>
+  <span class="n">dsqrtvar</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.</span> <span class="o">/</span><span class="p">(</span><span class="n">sqrtvar</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="n">divar</span>
+
+  <span class="c">#step5</span>
+  <span class="n">dvar</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="mf">1.</span> <span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">var</span><span class="o">+</span><span class="n">eps</span><span class="p">)</span> <span class="o">*</span> <span class="n">dsqrtvar</span>
+
+  <span class="c">#step4</span>
+  <span class="n">dsq</span> <span class="o">=</span> <span class="mf">1.</span> <span class="o">/</span><span class="n">N</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">N</span><span class="p">,</span><span class="n">D</span><span class="p">))</span> <span class="o">*</span> <span class="n">dvar</span>
+
+  <span class="c">#step3</span>
+  <span class="n">dxmu2</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">xmu</span> <span class="o">*</span> <span class="n">dsq</span>
+
+  <span class="c">#step2</span>
+  <span class="n">dx1</span> <span class="o">=</span> <span class="p">(</span><span class="n">dxmu1</span> <span class="o">+</span> <span class="n">dxmu2</span><span class="p">)</span>
+  <span class="n">dmu</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="nb">sum</span><span class="p">(</span><span class="n">dxmu1</span><span class="o">+</span><span class="n">dxmu2</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+  <span class="c">#step1</span>
+  <span class="n">dx2</span> <span class="o">=</span> <span class="mf">1.</span> <span class="o">/</span><span class="n">N</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">N</span><span class="p">,</span><span class="n">D</span><span class="p">))</span> <span class="o">*</span> <span class="n">dmu</span>
+
+  <span class="c">#step0</span>
+  <span class="n">dx</span> <span class="o">=</span> <span class="n">dx1</span> <span class="o">+</span> <span class="n">dx2</span>
+
+  <span class="k">return</span> <span class="n">dx</span><span class="p">,</span> <span class="n">dgamma</span><span class="p">,</span> <span class="n">dbeta</span>
+
+</code></pre>
+</div>
+
+<p><strong>Note:</strong> This is the naive implemantation of the backward pass. There exists an alternative implemantion, which is even a bit faster, but I personally found the naive implemantation way better for the purpose of understanding backpropagation through the BatchNorm-Layer. <a href="http://cthorey.github.io./backpropagation/">This well written blog post</a> gives a more detailed derivation of the alternative (faster) implemantation. However, there is a much more calculus envolved. But once you have understood the naive implemantation, it might not be to hard to follow.</p>
+
+<h1 id="some-final-words">Some final words</h1>
+
+<p>First of all I would like to thank the team of the cs231n class, that gratefully make all the material freely available. This gives people like me the possibility to take part in high class courses and learn a lot about deep learning in self-study.
+(Secondly it made me motivated to write my first blog post!)</p>
+
+<p>And as we have already passed the deadline for the second assignment, I might upload my code during the next days on github.</p>
+
+  </div>
+
+  <!-- disqus comments -->
+
+<div id="disqus_thread"><iframe id="dsq-app2" name="dsq-app2" allowtransparency="true" frameborder="0" scrolling="no" tabindex="0" title="Disqus" width="100%" src="./Understanding the backward pass through Batch Normalization Layer_files/saved_resource.html" style="width: 1px !important; min-width: 100% !important; border: none !important; overflow: hidden !important; height: 319px !important;" horizontalscrolling="no" verticalscrolling="no"></iframe></div>
+ <script type="text/javascript">
+     /* * * CONFIGURATION VARIABLES: EDIT BEFORE PASTING INTO YOUR WEBPAGE * * */
+     var disqus_shortname = 'kratzertblog'; // required: replace example with your forum shortname
+     /* * * DON'T EDIT BELOW THIS LINE * * */
+     (function() {
+         var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+         dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+         (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+     })();
+ </script>
+ <noscript>Please enable JavaScript to view the &lt;a href="http://disqus.com/?ref_noscript"&gt;comments powered by Disqus.&lt;/a&gt;</noscript>
+ 
+ 
+</article>
+
+      </div>
+    </div>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li>Flaire of Machine Learning</li>
+          <li><a href="mailto:f.kratzert@gmail.com">f.kratzert@gmail.com</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col footer-col-2">
+        <ul class="social-media-list">
+          
+          <li>
+            <a href="https://github.com/kratzert"><span class="icon icon--github"><svg viewBox="0 0 16 16"><path fill="#828282" d="M7.999,0.431c-4.285,0-7.76,3.474-7.76,7.761 c0,3.428,2.223,6.337,5.307,7.363c0.388,0.071,0.53-0.168,0.53-0.374c0-0.184-0.007-0.672-0.01-1.32 c-2.159,0.469-2.614-1.04-2.614-1.04c-0.353-0.896-0.862-1.135-0.862-1.135c-0.705-0.481,0.053-0.472,0.053-0.472 c0.779,0.055,1.189,0.8,1.189,0.8c0.692,1.186,1.816,0.843,2.258,0.645c0.071-0.502,0.271-0.843,0.493-1.037 C4.86,11.425,3.049,10.76,3.049,7.786c0-0.847,0.302-1.54,0.799-2.082C3.768,5.507,3.501,4.718,3.924,3.65 c0,0,0.652-0.209,2.134,0.796C6.677,4.273,7.34,4.187,8,4.184c0.659,0.003,1.323,0.089,1.943,0.261 c1.482-1.004,2.132-0.796,2.132-0.796c0.423,1.068,0.157,1.857,0.077,2.054c0.497,0.542,0.798,1.235,0.798,2.082 c0,2.981-1.814,3.637-3.543,3.829c0.279,0.24,0.527,0.713,0.527,1.437c0,1.037-0.01,1.874-0.01,2.129 c0,0.208,0.14,0.449,0.534,0.373c3.081-1.028,5.302-3.935,5.302-7.362C15.76,3.906,12.285,0.431,7.999,0.431z"></path></svg>
+</span><span class="username">kratzert</span></a>
+
+          </li>
+          
+
+          
+          <li>
+            <a href="https://twitter.com/fkratzert"><span class="icon icon--twitter"><svg viewBox="0 0 16 16"><path fill="#828282" d="M15.969,3.058c-0.586,0.26-1.217,0.436-1.878,0.515c0.675-0.405,1.194-1.045,1.438-1.809c-0.632,0.375-1.332,0.647-2.076,0.793c-0.596-0.636-1.446-1.033-2.387-1.033c-1.806,0-3.27,1.464-3.27,3.27 c0,0.256,0.029,0.506,0.085,0.745C5.163,5.404,2.753,4.102,1.14,2.124C0.859,2.607,0.698,3.168,0.698,3.767 c0,1.134,0.577,2.135,1.455,2.722C1.616,6.472,1.112,6.325,0.671,6.08c0,0.014,0,0.027,0,0.041c0,1.584,1.127,2.906,2.623,3.206 C3.02,9.402,2.731,9.442,2.433,9.442c-0.211,0-0.416-0.021-0.615-0.059c0.416,1.299,1.624,2.245,3.055,2.271 c-1.119,0.877-2.529,1.4-4.061,1.4c-0.264,0-0.524-0.015-0.78-0.046c1.447,0.928,3.166,1.469,5.013,1.469 c6.015,0,9.304-4.983,9.304-9.304c0-0.142-0.003-0.283-0.009-0.423C14.976,4.29,15.531,3.714,15.969,3.058z"></path></svg>
+</span><span class="username">fkratzert</span></a>
+
+          </li>
+          
+        </ul>
+      </div>
+
+      <div class="footer-col footer-col-3">
+        <p>Keeping progress recorded...
+</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+
+
+  
+
+
+</body><span class="gr__tooltip"><span class="gr__tooltip-content"></span><i class="gr__tooltip-logo"></i><span class="gr__triangle"></span></span></html>
